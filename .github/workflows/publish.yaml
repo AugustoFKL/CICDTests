@@ -1,0 +1,87 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*
+
+env:
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+jobs:
+  publish:
+    strategy:
+      matrix:
+        triple:
+          - { os: 'ubuntu-latest', target: 'x86_64-unknown-linux-gnu', lib: 'libcicd_ffi.so' }
+          - { os: 'macos-latest', target: 'aarch64-apple-darwin', lib: 'libcicd_ffi.dylib' }
+          - { os: 'macos-latest', target: 'x86_64-apple-darwin', lib: 'libcicd_ffi.dylib' }
+          - { os: 'windows-latest', target: 'x86_64-pc-windows-msvc', lib: 'cicd_ffi.dll' }
+    env:
+      ARTIFACT_FILE_PATH: "./target/${{ matrix.triple.target }}/release/${{ matrix.triple.lib }}"
+      KOTLIN_BINDINGS_PATH: "./uniffi"
+      PYTHON_BINDINGS_PATH: "./cicd_ffi.py"
+      UDL_PATH: "./cicd_ffi/src/cicd_ffi.udl"
+      ZIP_NAME: "cicd_ffi-${{ matrix.triple.target }}.zip"
+    name: Publish artifacts for ${{ matrix.triple.os }} with ${{ matrix.triple.target }}
+    runs-on: ${{ matrix.triple.os }}
+
+    steps:
+      # Get current tag to use as the release name.
+      - name: Get current tag
+        id: tag
+        run: echo "tag=${GITHUB_REF#refs/*/}" >> $GITHUB_OUTPUT
+
+      # Get current date to use as the release as part of the release name.
+      - name: Get current date
+        id: date
+        run: echo "date=$(date --rfc-3339=date)" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+          fetch-depth: 1
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: "${{ matrix.triple.target }}"
+
+      - name: Generate Cargo.lock
+        run: cargo update
+
+      - name: Cache dependencies
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ./target
+          key: "${{ runner.os }}-rust-${{ matrix.triple.target }}-${{ hashFiles('**/Cargo.lock') }}"
+          restore-keys: "${{ runner.os }}-rust-${{ matrix.triple.target }}-"
+
+      - name: Build project
+        run: cargo build --release --target ${{ matrix.triple.target }}
+
+      - name: Build kotlin artifacts
+        run: cargo run --release --bin uniffi-bindgen generate ${{ env.UDL_PATH }} -l kotlin -o ./ --no-format
+
+      - name: Build python artifacts
+        run: cargo run --release --bin uniffi-bindgen generate ${{ env.UDL_PATH }} -l python -o ./ --no-format
+
+      - name: Zip artifacts
+        run: 7z a ${{ env.ZIP_NAME }} ${{ env.KOTLIN_BINDINGS_PATH }} ${{ env.PYTHON_BINDINGS_PATH }} ${{ env.ARTIFACT_FILE_PATH }}
+
+      - name: Upload development binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          release_name: "[${{ steps.tag.outputs.tag }}] - ${{ steps.date.outputs.date }}"
+          repo_token: ${{ secrets.PAT }}
+          file: ${{ env.ZIP_NAME }}
+          asset_name: ${{ env.ZIP_NAME }}
+          tag: ${{ github.ref }}

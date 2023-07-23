@@ -1,0 +1,143 @@
+name: Update caches
+
+on:
+  ## Run on every push to the dev branch.
+  push:
+    branches:
+      - master
+  ## Run every Wednesday and Sunday at 00:00 UTC.
+  schedule:
+    - cron: "0 0 * * 0,3"
+  ## Manual trigger.
+  workflow_dispatch:
+
+jobs:
+  cache-ubuntu:
+    strategy:
+      matrix:
+        triple:
+          # x86_64 architecture with the Linux GNU toolchain.
+          - { os: 'ubuntu-latest', target: 'x86_64-unknown-linux-gnu' }
+
+    name: Update Rust stable caches for ${{ matrix.triple.os }} with ${{ matrix.triple.target }}
+    runs-on: ${{ matrix.triple.os }}
+    steps:
+      # Checkout the repository and all its submodules, only with the latest commit.
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+          fetch-depth: 1
+
+      # Install Rust stable.
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: "${{ matrix.triple.target }}"
+
+      # Generate the Cargo.lock file. Since we ignore the lockfile on .gitignore, we need to generate it before we can check the cache.
+      - name: Generate Cargo.lock
+        run: cargo update
+
+      # Check if a cache exists for the given configuration.
+      - name: Check cache
+        id: cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ./target
+          key: "${{ runner.os }}-rust-${{ matrix.triple.target }}-${{ hashFiles('**/Cargo.lock') }}"
+          lookup-only: true
+
+      # Build the project if cache not found.
+      - name: Build project
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo build --workspace --release --target ${{ matrix.triple.target }}
+
+      # Save the cache if not found.
+      - name: Save cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v3
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ./target
+          key: "${{ runner.os }}-rust-${{ matrix.triple.target }}-${{ hashFiles('**/Cargo.lock') }}"
+
+  # Since only Ubuntu is used for testing in a daily basis, we only need to cache the other platforms once in a while, for publishing.
+  cache-non-ubuntu:
+    strategy:
+      matrix:
+        triple:
+          # ARM64 (Apple Silicon) architecture for macOS.
+          - { os: 'macos-latest', target: 'aarch64-apple-darwin' }
+          # x86_64 architecture for macOS.
+          - { os: 'macos-latest', target: 'x86_64-apple-darwin' }
+          # x86_64 architecture for Windows using MSVC (Microsoft Visual C++).
+          - { os: 'windows-latest', target: 'x86_64-pc-windows-msvc' }
+
+    name: Update Rust stable caches for ${{ matrix.triple.os }} with ${{ matrix.triple.target }}
+    runs-on: ${{ matrix.triple.os }}
+    # if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      # Checkout the repository and all its submodules, only with the latest commit.
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+          fetch-depth: 1
+
+      # Install Rust stable.
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: "${{ matrix.triple.target }}"
+
+      # Generate the Cargo.lock file. Since we ignore the lockfile on .gitignore, we need to generate it before we can check the cache.
+      - name: Generate Cargo.lock
+        run: cargo update
+
+      # Check if a cache exists for the given configuration.
+      - name: Check cache
+        id: cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ./target
+          key: "${{ runner.os }}-rust-${{ matrix.triple.target }}-${{ hashFiles('**/Cargo.lock') }}"
+          lookup-only: true
+
+      # Build the project if cache not found.
+      - name: Build project
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo build --workspace --release --target ${{ matrix.triple.target }}
+
+      # Save the cache if not found.
+      - name: Save cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v3
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ./target
+          key: "${{ runner.os }}-rust-${{ matrix.triple.target }}-${{ hashFiles('**/Cargo.lock') }}"

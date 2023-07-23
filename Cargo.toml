@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "cicd_ffi",
+    "cicd_tests",
+]

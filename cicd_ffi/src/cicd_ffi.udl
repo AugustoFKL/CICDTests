@@ -1,0 +1,20 @@
+namespace cicd_ffi {
+
+
+};
+
+[Enum]
+interface SchemaName {
+    Name(string name);
+    Authorization(string authorization);
+    SchemaNameAndAuthorization(string name, string authorization);
+};
+
+interface CreateSchema {
+    constructor(boolean if_not_exists, SchemaName schema_name);
+
+    boolean if_not_exists();
+
+
+    SchemaName schema_name();
+};
