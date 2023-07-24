@@ -14,12 +14,13 @@ jobs:
     strategy:
       matrix:
         triple:
-          - { os: 'ubuntu-latest', target: 'x86_64-unknown-linux-gnu', lib: 'libcicd_ffi.so' }
-          - { os: 'macos-latest', target: 'aarch64-apple-darwin', lib: 'libcicd_ffi.dylib' }
-          - { os: 'macos-latest', target: 'x86_64-apple-darwin', lib: 'libcicd_ffi.dylib' }
-          - { os: 'windows-latest', target: 'x86_64-pc-windows-msvc', lib: 'cicd_ffi.dll' }
+          - { os: 'ubuntu-latest', target: 'x86_64-unknown-linux-gnu', lib: 'libcicd_ffi', ext: 'so' }
+          - { os: 'macos-latest', target: 'aarch64-apple-darwin', lib: 'libcicd_ffi', ext: 'dylib' }
+          - { os: 'macos-latest', target: 'x86_64-apple-darwin', lib: 'libcicd_ffi', ext: 'dylib' }
+          - { os: 'windows-latest', target: 'x86_64-pc-windows-msvc', lib: 'cicd_ffi', ext: 'dll' }
     env:
-      ARTIFACT_FILE_PATH: "./target/${{ matrix.triple.target }}/release/${{ matrix.triple.lib }}"
+      ARTIFACT_FILE_PATH: "./target/${{ matrix.triple.target }}/release/${{ matrix.triple.lib }}.${{ matrix.triple.ext }}"
+      EXPECTED_ARTIFACT_NAME: "uniffi_cicd_ffi.${{ matrix.triple.ext }}"
       KOTLIN_BINDINGS_PATH: "./uniffi"
       PYTHON_BINDINGS_PATH: "./cicd_ffi.py"
       UDL_PATH: "./cicd_ffi/src/cicd_ffi.udl"
@@ -68,6 +69,9 @@ jobs:
       - name: Build project
         run: cargo build --release --target ${{ matrix.triple.target }}
 
+      - name: Rename artifact
+        run: mv ${{ env.ARTIFACT_FILE_PATH }} ${{ env.EXPECTED_ARTIFACT_NAME }}
+
       - name: Build kotlin artifacts
         run: cargo run --release --bin uniffi-bindgen generate ${{ env.UDL_PATH }} -l kotlin -o ./ --no-format
 
@@ -75,7 +79,7 @@ jobs:
         run: cargo run --release --bin uniffi-bindgen generate ${{ env.UDL_PATH }} -l python -o ./ --no-format
 
       - name: Zip artifacts
-        run: 7z a ${{ env.ZIP_NAME }} ${{ env.KOTLIN_BINDINGS_PATH }} ${{ env.PYTHON_BINDINGS_PATH }} ${{ env.ARTIFACT_FILE_PATH }}
+        run: 7z a ${{ env.ZIP_NAME }} ${{ env.KOTLIN_BINDINGS_PATH }} ${{ env.PYTHON_BINDINGS_PATH }} ${{ env.EXPECTED_ARTIFACT_NAME }}
 
       - name: Upload development binaries to release
         uses: svenstaro/upload-release-action@v2
