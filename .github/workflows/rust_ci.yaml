@@ -1,0 +1,85 @@
+name: Cargo Test
+
+on:
+  workflow_call:
+  pull_request:
+    types: [ opened, synchronize, reopened, ready_for_review ]
+
+env:
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
+# Concurrency is employed to avoid multiple identical workflows from running concurrently. When a new event is triggered
+# while this workflow is active, the new workflow will be executed, and the previous one will be terminated. It's
+# important to note that the group is the current ref, typically the current branch, and as a result, different branches
+# won't affect each other.
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust_linters:
+    name: Lint Rust Code Base
+    # Don't run on draft pull requests.
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+
+      # Install Rust stable.
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Clippy linter.
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # Install Rust nightly.
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      # Rustfmt linter.
+      - name: rustfmt
+        run: cargo +nightly fmt --all -- --check
+  unit-test:
+    name: Rust unit tests
+    # Wait for the linters to finish before running the unit tests.
+    needs: [ rust_linters ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT }}
+          fetch-depth: 1
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # Generate the Cargo.lock file. Since we ignore the lockfile on .gitignore, we need to generate it before we can check the cache.
+      - name: Generate Cargo.lock
+        run: cargo update
+
+      - name: Restore cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ./target
+          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-
+
+      - name: Run unit tests
+        run: cargo test --release
